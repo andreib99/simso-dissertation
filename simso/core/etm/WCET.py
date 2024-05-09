@@ -5,6 +5,7 @@ from simso.core.etm.AbstractExecutionTimeModel \
 class WCET(AbstractExecutionTimeModel):
     def __init__(self, sim, _):
         self.sim = sim
+        self.et = {}
         self.executed = {}
         self.on_execute_date = {}
 
@@ -20,7 +21,7 @@ class WCET(AbstractExecutionTimeModel):
 
     def on_activate(self, job):
         self.executed[job] = 0
-
+        self.et[job] = job.wcet * self.sim.cycles_per_ms
     def on_execute(self, job):
         self.on_execute_date[job] = self.sim.now()
 
@@ -29,9 +30,11 @@ class WCET(AbstractExecutionTimeModel):
 
     def on_terminated(self, job):
         self.update_executed(job)
+        del self.et[job]
 
     def on_abort(self, job):
         self.update_executed(job)
+        del self.et[job]
 
     def get_executed(self, job):
         if job in self.on_execute_date:
@@ -41,8 +44,7 @@ class WCET(AbstractExecutionTimeModel):
         return self.executed[job] + c
 
     def get_ret(self, job):
-        wcet_cycles = int(job.wcet * self.sim.cycles_per_ms)
-        return int(wcet_cycles - self.get_executed(job))
+        return int(self.et[job] - self.get_executed(job))
 
     def update(self):
         for job in list(self.on_execute_date.keys()):

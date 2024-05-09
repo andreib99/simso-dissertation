@@ -277,6 +277,13 @@ class Job(Process):
         """
         return self._task.deadline
 
+    @deadline.setter
+    def deadline(self, value):
+        """
+        Set deadline
+        """
+        self._task.deadline = value
+
     @property
     def pred(self):
         return self._pred

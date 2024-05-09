@@ -17,10 +17,11 @@ class TaskInfo(object):
     :class:`Task` instances can be created.
     """
 
-    def __init__(self, name, identifier, task_type, abort_on_miss, period,
+    def __init__(self, name, identifier, task_class, task_type, abort_on_miss, period,
                  activation_date, n_instr, mix, stack_file, wcet, acet,
                  et_stddev, deadline, base_cpi, followed_by,
-                 list_activation_dates, preemption_cost, data):
+                 list_activation_dates, preemption_cost, nr_crit_levels,
+                 crit_level, list_wcets, wcet_deviations, data):
         """
         :type name: str
         :type identifier: int
@@ -39,10 +40,12 @@ class TaskInfo(object):
         :type followed_by: int
         :type list_activation_dates: list
         :type preemption_cost: int
+        :type nr_crit_levels: int
         :type data: dict
         """
         self.name = name
         self.identifier = identifier
+        self.task_class = task_class
         self.task_type = task_type
         self.period = period
         self.activation_date = activation_date
@@ -62,6 +65,10 @@ class TaskInfo(object):
         self.list_activation_dates = list_activation_dates
         self.data = data
         self.preemption_cost = preemption_cost
+        self.nr_crit_levels = nr_crit_levels
+        self.crit_level = crit_level
+        self.list_wcets = list_wcets
+        self.wcet_deviations = wcet_deviations
 
     @property
     def csdp(self):
@@ -141,6 +148,7 @@ class GenericTask(Process):
         self._cpi_alone = {}
         self._jobs = []
         self.job = None
+        self.enabled = True
 
     def __lt__(self, other):
         return self.identifier < other.identifier
@@ -155,6 +163,10 @@ class GenericTask(Process):
         if proc is None:
             proc = self.cpu
         return self._cpi_alone[proc]
+
+    @property
+    def task_class(self):
+        return self._task_info.task_class
 
     @property
     def base_cpi(self):
@@ -174,6 +186,13 @@ class GenericTask(Process):
         """
         return self._task_info.deadline
 
+    @deadline.setter
+    def deadline(self, value):
+        """
+        Set deadline
+        """
+        self._task_info.deadline = value
+
     @property
     def n_instr(self):
         return self._task_info.n_instr
@@ -189,6 +208,22 @@ class GenericTask(Process):
     @property
     def preemption_cost(self):
         return self._task_info.preemption_cost
+
+    @property
+    def nr_crit_levels(self):
+        return self._task_info.nr_crit_levels
+
+    @property
+    def crit_level(self):
+        return self._task_info.crit_level
+
+    @property
+    def list_wcets(self):
+        return self._task_info.list_wcets
+
+    @property
+    def wcet_deviations(self):
+        return self._task_info.wcet_deviations
 
     @property
     def footprint(self):
@@ -261,7 +296,10 @@ class GenericTask(Process):
             self.sim.activate(self.job, self.job.activate_job())
 
     def _job_killer(self, job):
-        if job.end_date is None and job.computation_time < job.wcet:
+        if job.end_date is None and (
+                job.computation_time < job.wcet or
+                job.computation_time < job.deadline
+        ):
             if self._task_info.abort_on_miss:
                 self.cancel(job)
                 job.abort()
@@ -316,7 +354,7 @@ class PTask(GenericTask):
                               self._sim.cycles_per_ms)
 
         while True:
-            #print self.sim.now(), "activate", self.name
+            # print self.sim.now(), "activate", self.name
             self.create_job()
             yield hold, self, int(self.period * self._sim.cycles_per_ms)
 
@@ -329,11 +367,66 @@ class SporadicTask(GenericTask):
     fields = ['list_activation_dates', 'deadline', 'wcet']
 
     def execute(self):
-
         self._init()
         for ndate in self.list_activation_dates:
             yield hold, self, int(ndate * self._sim.cycles_per_ms) \
-                - self._sim.now()
+                              - self._sim.now()
+            self.create_job()
+
+    @property
+    def list_activation_dates(self):
+        return self._task_info.list_activation_dates
+
+
+class MixedCriticalityTask(GenericTask):
+    """
+        Mixed criticality abstract class. Inherits from :class:`GenericTask`.
+    """
+    fields = ['deadline', 'nr_crit_levels', 'crit_level', 'list_wcets', 'wcet_deviations']
+
+
+class MCATask(MixedCriticalityTask):
+    """
+        Non-periodic Task process. Inherits from :class:`Mixed-Criticality`. The job is
+        created by another task.
+        """
+
+    def execute(self):
+        self._init()
+        yield passivate, self
+
+
+class MCPTask(MixedCriticalityTask):
+    """
+    Periodic Task process. Inherits from :class:`Mixed-Criticality`. The jobs are
+    created periodically.
+    """
+    fields = MixedCriticalityTask.fields + ['activation_date', 'period']
+
+    def execute(self):
+        self._init()
+        # wait the activation date.
+        yield hold, self, int(self._task_info.activation_date *
+                              self._sim.cycles_per_ms)
+
+        while True and self.enabled:
+            # print self.sim.now(), "activate", self.name
+            self.create_job()
+            yield hold, self, int(self.period * self._sim.cycles_per_ms)
+
+
+class MCSporadicTask(MixedCriticalityTask):
+    """
+        Sporadic Task process. Inherits from :class:`Mixed-Criticality`. The jobs are
+        created using a list of activation dates.
+    """
+    fields = MixedCriticalityTask.fields + ['list_activation_dates']
+
+    def execute(self):
+        self._init()
+        for ndate in self.list_activation_dates:
+            yield hold, self, int(ndate * self._sim.cycles_per_ms) \
+                              - self._sim.now()
             self.create_job()
 
     @property
@@ -342,9 +435,16 @@ class SporadicTask(GenericTask):
 
 
 task_types = {
-    "Periodic": PTask,
-    "APeriodic": ATask,
-    "Sporadic": SporadicTask
+    "Generic": {
+        "Periodic": PTask,
+        "APeriodic": ATask,
+        "Sporadic": SporadicTask
+    },
+    "Mixed-Criticality": {
+        "Periodic": MCPTask,
+        "APeriodic": MCATask,
+        "Sporadic": MCSporadicTask
+    }
 }
 
 task_types_names = ["Periodic", "APeriodic", "Sporadic"]
@@ -356,4 +456,4 @@ def Task(sim, task_info):
     task_info.
     """
 
-    return task_types[task_info.task_type](sim, task_info)
+    return task_types[task_info.task_class][task_info.task_type](sim, task_info)

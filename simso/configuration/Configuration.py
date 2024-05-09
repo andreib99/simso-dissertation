@@ -277,22 +277,24 @@ class Configuration(object):
         """
         return self._scheduler_info
 
-    def add_task(self, name, identifier, task_type="Periodic",
+    def add_task(self, name, identifier, task_class="Generic", task_type="Periodic",
                  abort_on_miss=True, period=10, activation_date=0,
                  n_instr=0, mix=0.5, stack_file="", wcet=0, acet=0,
                  et_stddev=0, deadline=10, base_cpi=1.0, followed_by=None,
-                 list_activation_dates=[], preemption_cost=0, data=None):
+                 list_activation_dates=[], preemption_cost=0, nr_crit_levels=1,
+                 crit_level=0, list_wcets=[], wcet_deviations=[], data=None):
         """
         Helper method to create a TaskInfo and add it to the list of tasks.
         """
         if data is None:
             data = dict((k, None) for k in self.task_data_fields)
 
-        task = TaskInfo(name, identifier, task_type, abort_on_miss, period,
-                        activation_date, n_instr, mix,
+        task = TaskInfo(name, identifier, task_class, task_type, abort_on_miss,
+                        period, activation_date, n_instr, mix,
                         (stack_file, self.cur_dir), wcet, acet, et_stddev,
                         deadline, base_cpi, followed_by, list_activation_dates,
-                        preemption_cost, data)
+                        preemption_cost, nr_crit_levels, crit_level, list_wcets,
+                        wcet_deviations, data)
         self.task_info_list.append(task)
         return task
 

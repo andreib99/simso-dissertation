@@ -1,6 +1,7 @@
 """
 Tools for generating task sets.
 """
+from collections import OrderedDict
 
 import numpy as np
 import random
@@ -236,6 +237,29 @@ def gen_arrivals(period, min_, max_, round_to_int=False):
     return dates
 
 
+def gen_list_wcets(general_wcet, nr_crit_levels, crit_level, round_to_int=False):
+    wcets = {}
+    wcets[crit_level] = general_wcet
+    for i in range(nr_crit_levels):
+        wcet = general_wcet - 0.1 * general_wcet * (crit_level - i)
+        if round_to_int:
+            wcet = int(round(wcet))
+        wcets[i] = wcet
+
+    return list(OrderedDict(sorted(wcets.items())).values())
+
+
+def gen_wcet_deviations(list_wcets, nr_crit_levels, round_to_int=False):
+    wcet_deviations = []
+    for i in range(nr_crit_levels):
+        d = 0.5 * list_wcets[i]
+        if round_to_int:
+            d = int(round(d))
+        wcet_deviations.append(d)
+    wcet_deviations[-1] = 0
+    return wcet_deviations
+
+
 def gen_periods_loguniform(n, nsets, min_, max_, round_to_int=False):
     """
     Generate a list of `nsets` sets containing each `n` random periods using a
@@ -292,7 +316,7 @@ def gen_periods_discrete(n, nsets, periods):
         return p[np.random.randint(len(p), size=(nsets, n))].tolist()
 
 
-def gen_tasksets(utilizations, periods):
+def gen_tasksets(utilizations, periods, crit_level=None):
     """
     Take a list of task utilization sets and a list of task period sets and
     return a list of couples (c, p) sets. The computation times are truncated
@@ -315,5 +339,5 @@ def gen_tasksets(utilizations, periods):
     def trunc(x, p):
         return int(x * 10 ** p) / float(10 ** p)
 
-    return [[(trunc(ui * pi, 6), trunc(pi, 6)) for ui, pi in zip(us, ps)]
+    return [[(trunc(ui * pi, 6), trunc(pi, 6), crit_level) for ui, pi in zip(us, ps)]
             for us, ps in zip(utilizations, periods)]
