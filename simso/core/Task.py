@@ -235,6 +235,13 @@ class GenericTask(Process):
         """Worst-Case Execution Time in milliseconds."""
         return self._task_info.wcet
 
+    @wcet.setter
+    def wcet(self, value):
+        """
+        Set wcet
+        """
+        self._task_info.wcet = value
+
     @property
     def acet(self):
         return self._task_info.acet
@@ -298,7 +305,7 @@ class GenericTask(Process):
     def _job_killer(self, job):
         if job.end_date is None and (
                 job.computation_time < job.wcet or
-                job.computation_time < job.deadline
+                job.computation_time > job.deadline
         ):
             if self._task_info.abort_on_miss:
                 self.cancel(job)

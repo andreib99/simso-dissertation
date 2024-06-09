@@ -256,7 +256,6 @@ def gen_wcet_deviations(list_wcets, nr_crit_levels, round_to_int=False):
         if round_to_int:
             d = int(round(d))
         wcet_deviations.append(d)
-    wcet_deviations[-1] = 0
     return wcet_deviations
 
 

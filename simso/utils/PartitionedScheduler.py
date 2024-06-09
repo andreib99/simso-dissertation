@@ -145,7 +145,7 @@ def decreasing_best_fit(scheduler):
     Best-Fit with tasks inversely sorted by their u_i.
     """
 
-    return next_fit(
+    return best_fit(
         scheduler, sorted(scheduler.task_list,
                           key=lambda t: -float(t.wcet) / t.period))
 
@@ -155,7 +155,7 @@ def decreasing_worst_fit(scheduler):
     Worst-Fit with tasks inversely sorted by their u_i.
     """
 
-    return next_fit(
+    return worst_fit(
         scheduler, sorted(scheduler.task_list,
                           key=lambda t: -float(t.wcet) / t.period))
 

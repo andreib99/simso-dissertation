@@ -14,13 +14,16 @@ class EDF_VD_mono(Scheduler):
 
     def init(self):
         self.ready_list = []
-        self.mode = 0
+        self.max_crit_level = max([t.crit_level for t in self.task_list], default=None)
+        self.min_crit_level = min([t.crit_level for t in self.task_list], default=None)
+        self.mode = self.min_crit_level or 0
         self.K = self.task_list[0].nr_crit_levels
+        if self.min_crit_level != self.max_crit_level:
+            if not self.passed_pesimistic_test():
+                print("Error: Total utilization over 100%!")
+                self.sim.logger.log("Error: Total utilization over 100%!")
 
-        if not self.passed_pesimistic_test():
-            print("Error")
-
-        self._pre_runtime_processing()
+            self._pre_runtime_processing()
 
     def passed_pesimistic_test(self):
         if sum([t.list_wcets[t.crit_level] / float(t.period) for t in self.task_list]) <= 1:
@@ -33,13 +36,17 @@ class EDF_VD_mono(Scheduler):
                 [task.list_wcets[task.crit_level] / float(task.period) for task in self.task_list if
                  min_level <= task.crit_level <= max_level])
 
-        for k in range(self.K):
-            u_lo = _cpu_levels_utilization(0, k)
+        for k in range(self.min_crit_level, self.K):
+            u_lo = _cpu_levels_utilization(self.min_crit_level, k)
+            if u_lo == 0:
+                continue
             u_hi = _cpu_levels_utilization(k + 1, self.K)
+            if u_lo >= 1 or u_hi > 1:
+                continue
             a = u_hi / float(1 - u_lo)
             b = (1 - u_hi) / float(u_lo)
-            if u_lo < 1 and a <= b:
-                x = 1
+            if u_lo < 1 and a <= b and (a < 1 or b > 0) and a < 1:
+                x = 2
                 while x <= 0 or x >= 1:
                     x = random.uniform(a, b)
                 for t in self.task_list:
@@ -47,19 +54,18 @@ class EDF_VD_mono(Scheduler):
                         t.deadline = t.period * x
 
     def on_activate(self, job):
-        if job.task.enabled:
+        task = job.task
+        if task.enabled:
             self.ready_list.append(job)
             choices = [0, 1]
-            weights = [0.8, 0.2]
-            if job.task.crit_level == self.mode:
-                wcets = job.task.list_wcets
-                deviations = job.task.wcet_deviations
-                if np.random.choice(choices, 1, p=weights) == 0:
-                    et = random.uniform(wcets[self.mode] - deviations[self.mode], wcets[self.mode])
-                else:
-                    et = random.uniform(wcets[self.mode], wcets[self.mode] + deviations[self.mode])
+            weights = [0.9, 0.1]
+            wcets = task.list_wcets
+            deviations = task.wcet_deviations
+            if np.random.choice(choices, 1, p=weights) == 0 or self.mode == task.nr_crit_levels - 1:
+                et = random.uniform(wcets[self.mode] - deviations[self.mode], wcets[self.mode])
             else:
-                et = job.wcet
+                et = random.uniform(wcets[self.mode], wcets[self.mode] + deviations[self.mode])
+
             job._etm.et[job] = et * self.sim.cycles_per_ms
 
         job.cpu.resched()
@@ -68,7 +74,7 @@ class EDF_VD_mono(Scheduler):
         if job in self.ready_list:
             self.ready_list.remove(job)
         task = job.task
-        if self.mode == task.crit_level and job.computation_time > task.list_wcets[self.mode]:
+        if job.computation_time > task.list_wcets[self.mode] and self.mode != task.nr_crit_levels - 1:
             self.mode += 1
             for t in self.task_list:
                 if t.crit_level < self.mode:
